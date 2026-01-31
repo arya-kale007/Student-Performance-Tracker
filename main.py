@@ -1,5 +1,82 @@
 import sqlite3
 from datetime import date
+import csv 
+
+# --- ADMIN AUTHENTICATION (The Gatekeeper) ---
+def check_admin():
+    password = input("Enter Admin Password: ")
+    
+    if password == "admin123":
+        return True
+    else:
+        print("❌ Access Denied: Incorrect Password.")
+        return False
+
+# --- EXPORT TO CSV FUNCTIONALITY (The Filing Cabinet) ---
+def export_to_csv():
+    conn = sqlite3.connect('tracker.db')
+    cursor = conn.cursor()
+
+    # 1. Fetch all students
+    cursor.execute("SELECT id, name, roll_no FROM students")
+    students = cursor.fetchall()
+
+    if not students:
+        print("No data to export.")
+        return
+
+    filename = "student_summary_report.csv"
+
+    # 2. Open a new file to write
+    with open(filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        
+        # Write the Header Row
+        writer.writerow(['ID', 'Name', 'Roll Number', 'Attendance %', 'Avg Marks'])
+
+        for s in students:
+            s_id, s_name, s_roll = s
+
+            # Calculate Attendance % for this student
+            cursor.execute("SELECT COUNT(*) FROM attendance WHERE student_id = ?", (s_id,))
+            total = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM attendance WHERE student_id = ? AND status = 'P'", (s_id,))
+            present = cursor.fetchone()[0]
+            att_pct = (present/total*100) if total > 0 else 0
+
+            # Calculate Average Marks for this student
+            cursor.execute("SELECT AVG(score) FROM marks WHERE student_id = ?", (s_id,))
+            avg_marks = cursor.fetchone()[0]
+            avg_marks = round(avg_marks, 2) if avg_marks else "N/A"
+
+            # Write the data row to the CSV
+            writer.writerow([s_id, s_name, s_roll, f"{att_pct:.2f}%", avg_marks])
+
+    print(f"✅ Success! Report exported as '{filename}'. Check your folder.")
+    conn.close()
+
+# --- SEARCH FUNCTIONALITY (The Magnifying Glass) ---
+def search_student():
+    query = input("Enter name or part of a name to search: ")
+    conn = sqlite3.connect('tracker.db')
+    cursor = conn.cursor()
+
+    # The '%' symbols tell SQL to look for the query anywhere in the name
+    search_term = f"%{query}%"
+    cursor.execute("SELECT * FROM students WHERE name LIKE ?", (search_term,))
+    
+    results = cursor.fetchall()
+    
+    if results:
+        print(f"\nFound {len(results)} matching student(s):")
+        print(f"{'ID':<5} | {'Name':<20} | {'Roll No':<10}")
+        print("-" * 40)
+        for row in results:
+            print(f"{row[0]:<5} | {row[1]:<20} | {row[2]:<10}")
+    else:
+        print(f"No students found matching '{query}'.")
+    
+    conn.close()
 
 # --- DATABASE SETUP (The Pantry) ---
 def init_db():
@@ -122,18 +199,28 @@ def main():
     init_db()
     while True:
         print("\n=== STUDENT TRACKER SYSTEM ===")
-        print("1. Add Student")
-        print("2. Mark Attendance")
-        print("3. Enter Marks")
-        print("4. View Analytics")
-        print("5. Exit")
+        print("1. [ADMIN] Add Student")
+        print("2. [ADMIN] Mark Attendance")
+        print("3. [ADMIN] Enter Marks")
+        print("4. [ADMIN] Export to Excel")
+        print("5. View Analytics (Public)")
+        print("6. Search Student (Public)")
+        print("7. Exit")
         
         choice = input("Select Option: ")
-        if choice == '1': add_student()
-        elif choice == '2': mark_attendance()
-        elif choice == '3': enter_marks()
-        elif choice == '4': generate_report()
-        elif choice == '5': break
+
+        # Sensitive Tasks (Require Password)
+        if choice in ['1', '2', '3', '4']:
+            if check_admin():
+                if choice == '1': add_student()
+                elif choice == '2': mark_attendance()
+                elif choice == '3': enter_marks()
+                elif choice == '4': export_to_csv()
+        
+        # Public Tasks (No Password)
+        elif choice == '5': generate_report()
+        elif choice == '6': search_student()
+        elif choice == '7': break
         else: print("Invalid selection.")
 
 if __name__ == "__main__":
